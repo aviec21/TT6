@@ -2,7 +2,7 @@ let allEvents = [];
 let uniqueCourses = new Set();
 let calendar;
 
-// MAPPING: Time Slots
+// MAPPING: Time Slots (Columns 3-12)
 const timeSlots = {
     3: { start: "09:00", end: "10:15" },
     4: { start: "10:30", end: "11:45" },
@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function processData(rows) {
     let lastValidDate = null;
     
-    // Start scan
+    // Start scan from index 0
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         let dateStr = row[0]; // First column
@@ -44,13 +44,13 @@ function processData(rows) {
         
         if (dateStr && (dateStr.includes("-") || dateStr.includes("/"))) {
             formattedDate = normalizeDate(dateStr);
-            lastValidDate = formattedDate; // Update memory
+            lastValidDate = formattedDate; 
         } else if (lastValidDate && hasData(row)) {
             // If date is missing but row has data, use previous date
             formattedDate = lastValidDate;
         }
 
-        if (!formattedDate) continue; // Skip junk rows
+        if (!formattedDate) continue; 
 
         const room = row[1]; 
 
@@ -59,18 +59,16 @@ function processData(rows) {
             const cellData = row[colIndex];
             
             if (cellData && cellData.trim().length > 1) {
-                // Normalize spaces: "BFSI  A  1" -> "BFSI A 1"
+                // Normalize spaces
                 const rawText = cellData.replace(/\s+/g, ' ').trim();
                 
                 // Logic: "BFSI A 1" -> "BFSI A"
                 let parts = rawText.split(" ");
-                // Remove last part if it is a number (Session ID)
                 if (parts.length > 1 && !isNaN(parts[parts.length - 1])) {
                     parts.pop();
                 }
                 const courseIdentifier = parts.join(" ");
 
-                // Ignore "Registration" or "Lunch" if they appear
                 if (courseIdentifier.toLowerCase().includes("registration")) continue;
 
                 uniqueCourses.add(courseIdentifier);
@@ -88,27 +86,18 @@ function processData(rows) {
     renderCheckboxes();
 }
 
-// Helper: Ensure valid date format YYYY-MM-DD
 function normalizeDate(str) {
     str = str.trim();
     // Handle 15/12/2025 or 15-12-2025
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
-        // If 3rd part is Year (2025)
-        if (parts[2].length === 4) {
-            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-        }
-        // If 1st part is Year (2025)
-        if (parts[0].length === 4) {
-             return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        }
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
     }
     return null;
 }
 
-// Helper: Check if row actually contains class data (not just a break line)
 function hasData(row) {
-    // Check if columns 3, 4, 5... have text
     for (let k = 3; k < 12; k++) {
         if (row[k] && row[k].trim().length > 1) return true;
     }
@@ -119,6 +108,11 @@ function renderCheckboxes() {
     const container = document.getElementById('checkbox-container');
     const loading = document.getElementById('loading');
     
+    if (uniqueCourses.size === 0) {
+        loading.innerHTML = "No courses found. Check CSV format.";
+        return;
+    }
+
     const sortedCourses = Array.from(uniqueCourses).sort();
     container.innerHTML = "";
 
@@ -151,23 +145,23 @@ function showCalendar() {
         return;
     }
 
-    // DEBUG: Check what we are finding
-    console.log("Filtering for:", selectedCourses);
     const filteredEvents = allEvents.filter(event => 
         selectedCourses.includes(event.extendedProps.courseId)
     );
     
-    // ALERT REPORT
     if (filteredEvents.length === 0) {
-        alert("0 classes found for this selection! This suggests a data matching error.");
-    } else {
-        alert(`Found ${filteredEvents.length} classes. Switching to calendar...`);
+        alert("0 classes found for this selection.");
+        return;
     }
 
+    // Switch View
     document.getElementById('selection-page').classList.add('hidden');
     document.getElementById('calendar-page').classList.remove('hidden');
 
-    initCalendar(filteredEvents);
+    // FIX: Wait 50ms for the div to become visible before rendering calendar
+    setTimeout(() => {
+        initCalendar(filteredEvents);
+    }, 50);
 }
 
 function goBack() {
@@ -178,15 +172,18 @@ function goBack() {
 function initCalendar(events) {
     const calendarEl = document.getElementById('calendar');
     
+    // SMART JUMP: Find the date of the first event so we don't land on an empty month
+    // Sort events by date to find the earliest
+    events.sort((a, b) => new Date(a.start) - new Date(b.start));
+    const firstEventDate = events[0].start.split('T')[0];
+
     if (calendar) {
-        calendar.removeAllEvents();
-        calendar.addEventSource(events);
-        calendar.render();
-        return;
+        calendar.destroy(); // Completely reset calendar
     }
 
     calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
+        initialDate: firstEventDate, // <--- JUMP TO FIRST CLASS
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
@@ -197,8 +194,7 @@ function initCalendar(events) {
         eventColor: '#4f46e5',
         nowIndicator: true,
         slotMinTime: "08:00:00",
-        slotMaxTime: "24:00:00", // Ensure late classes are shown
-        expandRows: true
+        slotMaxTime: "23:00:00"
     });
 
     calendar.render();
