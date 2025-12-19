@@ -2,7 +2,7 @@ let allEvents = [];
 let uniqueCourses = new Set();
 let calendar;
 
-// MAPPING: Columns to Time Slots
+// MAPPING: Time Slots
 const timeSlots = {
     3: { start: "09:00", end: "10:15" },
     4: { start: "10:30", end: "11:45" },
@@ -17,84 +17,63 @@ const timeSlots = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Show Debug Box
-    const debugBox = document.createElement('div');
-    debugBox.id = "debug-log";
-    debugBox.className = "bg-gray-100 p-4 m-4 border border-red-300 text-xs font-mono text-red-600 overflow-auto h-48";
-    debugBox.innerHTML = "<strong>System Status:</strong> Initializing...<br>";
-    document.body.prepend(debugBox);
-
-    function log(msg) {
-        debugBox.innerHTML += `> ${msg}<br>`;
-        console.log(msg);
-    }
-
-    log("Fetching timetable.csv...");
-
     Papa.parse("timetable.csv", {
         download: true,
         header: false,
         skipEmptyLines: true,
         complete: function(results) {
-            log(`File loaded! Found ${results.data.length} rows.`);
-            
-            // Print first 5 rows to check format
-            log("--- PREVIEW OF FIRST 5 ROWS ---");
-            results.data.slice(0, 5).forEach((row, i) => log(`Row ${i}: ${JSON.stringify(row)}`));
-            log("-------------------------------");
-
-            if (results.data.length === 0) {
-                log("ERROR: File is empty.");
-                return;
-            }
-            processData(results.data, log);
+            console.log("CSV Loaded. Rows:", results.data.length);
+            processData(results.data);
         },
         error: function(err) {
-            log(`CRITICAL ERROR: ${err.message}`);
+            alert("Error loading CSV: " + err.message);
         }
     });
 });
 
-function processData(rows, log) {
-    let coursesFound = 0;
-
-    // Scan all rows (we auto-detect where data starts)
+function processData(rows) {
+    let lastValidDate = null;
+    
+    // Start scan
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         let dateStr = row[0]; // First column
 
-        if (!dateStr) continue;
-
-        // 2. SMART DATE PARSING
-        // Convert 15/12/2025 or 15-12-2025 -> 2025-12-15
-        const formattedDate = normalizeDate(dateStr);
-
-        if (!formattedDate) {
-            // If it's not a date, it's likely a header or junk row. Skip silently.
-            continue;
+        // 1. DATE HANDLING (With "Fill Down" logic)
+        let formattedDate = null;
+        
+        if (dateStr && (dateStr.includes("-") || dateStr.includes("/"))) {
+            formattedDate = normalizeDate(dateStr);
+            lastValidDate = formattedDate; // Update memory
+        } else if (lastValidDate && hasData(row)) {
+            // If date is missing but row has data, use previous date
+            formattedDate = lastValidDate;
         }
 
-        const room = row[1]; // Second column
+        if (!formattedDate) continue; // Skip junk rows
 
-        // Loop through time columns
+        const room = row[1]; 
+
+        // 2. SCAN TIME COLUMNS
         for (const [colIndex, time] of Object.entries(timeSlots)) {
             const cellData = row[colIndex];
             
-            if (cellData && cellData.trim() !== "") {
-                const rawText = cellData.trim();
+            if (cellData && cellData.trim().length > 1) {
+                // Normalize spaces: "BFSI  A  1" -> "BFSI A 1"
+                const rawText = cellData.replace(/\s+/g, ' ').trim();
                 
                 // Logic: "BFSI A 1" -> "BFSI A"
                 let parts = rawText.split(" ");
+                // Remove last part if it is a number (Session ID)
                 if (parts.length > 1 && !isNaN(parts[parts.length - 1])) {
                     parts.pop();
                 }
-                let courseIdentifier = parts.join(" ");
+                const courseIdentifier = parts.join(" ");
 
-                // Filter out common keywords if needed
+                // Ignore "Registration" or "Lunch" if they appear
                 if (courseIdentifier.toLowerCase().includes("registration")) continue;
 
                 uniqueCourses.add(courseIdentifier);
-                coursesFound++;
 
                 allEvents.push({
                     title: `${rawText} (${room})`,
@@ -106,37 +85,34 @@ function processData(rows, log) {
         }
     }
 
-    log(`Scan complete. Found ${coursesFound} events and ${uniqueCourses.size} unique courses.`);
-    
-    if (uniqueCourses.size === 0) {
-        log("WARNING: 0 courses found. Check if the column indices in 'timeSlots' match your CSV columns.");
-    } else {
-        // Hide debug box if successful (optional, currently keeping it visible to be safe)
-        // document.getElementById('debug-log').style.display = 'none';
-        renderCheckboxes();
-    }
+    renderCheckboxes();
 }
 
-// Helper: Turns any date format into YYYY-MM-DD
+// Helper: Ensure valid date format YYYY-MM-DD
 function normalizeDate(str) {
     str = str.trim();
-    // 1. Check for YYYY-MM-DD (Standard)
-    if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
-
-    // 2. Check for DD/MM/YYYY or DD-MM-YYYY (Excel default)
-    // Matches 15/12/2025 or 15-12-2025
+    // Handle 15/12/2025 or 15-12-2025
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
-        const p1 = parts[0];
-        const p2 = parts[1];
-        const p3 = parts[2];
-
-        // If last part is year (e.g. 2025)
-        if (p3.length === 4) {
-            return `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+        // If 3rd part is Year (2025)
+        if (parts[2].length === 4) {
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        // If 1st part is Year (2025)
+        if (parts[0].length === 4) {
+             return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
         }
     }
-    return null; // Not a valid date
+    return null;
+}
+
+// Helper: Check if row actually contains class data (not just a break line)
+function hasData(row) {
+    // Check if columns 3, 4, 5... have text
+    for (let k = 3; k < 12; k++) {
+        if (row[k] && row[k].trim().length > 1) return true;
+    }
+    return false;
 }
 
 function renderCheckboxes() {
@@ -166,7 +142,6 @@ function renderCheckboxes() {
     container.classList.remove('hidden');
 }
 
-// Page Navigation
 function showCalendar() {
     const checkboxes = document.querySelectorAll('#checkbox-container input[type="checkbox"]:checked');
     const selectedCourses = Array.from(checkboxes).map(cb => cb.value);
@@ -176,9 +151,18 @@ function showCalendar() {
         return;
     }
 
+    // DEBUG: Check what we are finding
+    console.log("Filtering for:", selectedCourses);
     const filteredEvents = allEvents.filter(event => 
         selectedCourses.includes(event.extendedProps.courseId)
     );
+    
+    // ALERT REPORT
+    if (filteredEvents.length === 0) {
+        alert("0 classes found for this selection! This suggests a data matching error.");
+    } else {
+        alert(`Found ${filteredEvents.length} classes. Switching to calendar...`);
+    }
 
     document.getElementById('selection-page').classList.add('hidden');
     document.getElementById('calendar-page').classList.remove('hidden');
@@ -193,12 +177,14 @@ function goBack() {
 
 function initCalendar(events) {
     const calendarEl = document.getElementById('calendar');
+    
     if (calendar) {
         calendar.removeAllEvents();
         calendar.addEventSource(events);
         calendar.render();
         return;
     }
+
     calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         headerToolbar: {
@@ -211,7 +197,9 @@ function initCalendar(events) {
         eventColor: '#4f46e5',
         nowIndicator: true,
         slotMinTime: "08:00:00",
-        slotMaxTime: "23:00:00"
+        slotMaxTime: "24:00:00", // Ensure late classes are shown
+        expandRows: true
     });
+
     calendar.render();
 }
