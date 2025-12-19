@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Schedule Generator</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        /* Custom scrollbar for course list */
+        .course-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+    <div id="selection-page" class="min-h-screen flex flex-col items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full">
+            <h1 class="text-3xl font-bold mb-2 text-indigo-700">Select Your Courses</h1>
+            <p class="text-gray-500 mb-6">Check the boxes for the courses (and sections) you are enrolled in.</p>
+            
+            <div id="loading" class="text-center py-4 text-indigo-500">Loading schedule data...</div>
+
+            <div id="checkbox-container" class="course-list grid grid-cols-1 md:grid-cols-2 gap-3 hidden">
+                </div>
+
+            <div class="mt-8 flex justify-end">
+                <button onclick="showCalendar()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow transition duration-200">
+                    Generate Timetable &rarr;
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="calendar-page" class="hidden min-h-screen p-4 flex flex-col">
+        <div class="flex justify-between items-center mb-4 bg-white p-4 rounded-lg shadow">
+            <h2 class="text-xl font-bold text-gray-700">My Schedule</h2>
+            <button onclick="goBack()" class="text-sm text-indigo-600 hover:underline">
+                &larr; Change Selection
+            </button>
+        </div>
+        
+        <div class="bg-white p-4 rounded-xl shadow flex-grow relative z-0">
+            <div id='calendar'></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
