@@ -393,37 +393,79 @@ function clearSelection() {
     updateCounter();
 }
 
+// --- 4. GOOGLE CALENDAR COMPATIBLE CSV DOWNLOAD ---
 function downloadCSV() {
-    if (!currentScheduleMap) return;
+    if (!currentScheduleMap) {
+        alert("Please generate the schedule first.");
+        return;
+    }
+
+    // 1. Time Mapping for Google Calendar
+    const timeMap = {
+        3: { s: "09:00 AM", e: "10:15 AM" },
+        4: { s: "10:30 AM", e: "11:45 AM" },
+        5: { s: "12:00 PM", e: "01:15 PM" },
+        7: { s: "02:30 PM", e: "03:45 PM" },
+        8: { s: "04:00 PM", e: "05:15 PM" },
+        9: { s: "05:30 PM", e: "06:45 PM" },
+        10: { s: "07:00 PM", e: "08:15 PM" },
+        11: { s: "08:45 PM", e: "10:00 PM" },
+        12: { s: "10:15 PM", e: "11:30 PM" }
+    };
+
+    // 2. Define Headers (Google Calendar Standard)
     let csvContent = "data:text/csv;charset=utf-8,";
-    let headerRow = ["Date"];
-    slotsConfig.forEach(s => headerRow.push(s.label));
-    csvContent += headerRow.join(",") + "\r\n";
+    csvContent += "Subject,Start Date,Start Time,End Date,End Time,Location,Description\r\n";
+
+    // 3. Flatten the Schedule Data
     const sortedDates = Array.from(currentScheduleMap.keys()).sort();
+
     sortedDates.forEach(dateKey => {
         const dayData = currentScheduleMap.get(dateKey);
-        const isEmpty = Object.keys(dayData).length === 0;
-        let row = [dateKey];
-        if (isEmpty) {
-            slotsConfig.forEach(() => row.push("FREE"));
-        } else {
-            slotsConfig.forEach(slot => {
-                const events = dayData[slot.index];
-                if (events) {
-                    const text = events.map(e => `${e.text} (${e.room})`).join(" | ");
-                    row.push(`"${text}"`); 
-                } else {
-                    row.push("");
-                }
-            });
-        }
-        csvContent += row.join(",") + "\r\n";
+        
+        // Loop through all slots that have classes
+        Object.keys(dayData).forEach(slotIndex => {
+            const events = dayData[slotIndex];
+            const times = timeMap[slotIndex];
+
+            // Only proceed if we have valid time data for this slot
+            if (events && events.length > 0 && times) {
+                events.forEach(evt => {
+                    // Clean text to avoid CSV breaking
+                    const subject = evt.text.replace(/,/g, " "); 
+                    const location = evt.room ? evt.room.replace(/,/g, " ") : "";
+                    
+                    // Determine Description based on type
+                    let description = "Class Session";
+                    if (evt.type === 'quiz') description = "Quiz / Assessment";
+                    if (evt.type === 'exam') description = "End Term / Mid Term Exam";
+                    if (evt.type === 'holiday') description = "Holiday";
+
+                    // Construct CSV Row
+                    // Format: "Subject", "Start Date", "Start Time", "End Date", "End Time", "Location", "Description"
+                    let row = [
+                        `"${subject}"`,       // Subject
+                        dateKey,              // Start Date (YYYY-MM-DD works for GCal)
+                        `"${times.s}"`,       // Start Time
+                        dateKey,              // End Date
+                        `"${times.e}"`,       // End Time
+                        `"${location}"`,      // Location
+                        `"${description}"`    // Description
+                    ];
+
+                    csvContent += row.join(",") + "\r\n";
+                });
+            }
+        });
     });
+
+    // 4. Trigger Download
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "my_timetable.csv");
+    link.setAttribute("download", "timetable_gcal.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 }
+
