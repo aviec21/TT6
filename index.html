@@ -27,10 +27,16 @@
 
     <div id="selection-page" class="min-h-screen flex flex-col items-center justify-center p-6">
         <div class="bg-white p-8 rounded-xl shadow-lg max-w-5xl w-full">
-            <div class="flex justify-between items-center mb-4">
-                <h1 class="text-3xl font-bold text-indigo-700">Course Selection</h1>
-                <span class="text-xs text-gray-400">Selections are saved automatically</span>
+            <div class="flex justify-between items-center mb-4 border-b pb-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-indigo-700">Course Selection</h1>
+                    <p class="text-sm text-gray-400">Selections are saved automatically</p>
+                </div>
+                <div class="bg-indigo-100 text-indigo-800 px-4 py-2 rounded-full font-bold shadow-sm">
+                    Selected: <span id="selection-count">0</span>
+                </div>
             </div>
+            
             <p class="text-gray-500 mb-6">Select your courses. Quizzes and Exams will be included automatically.</p>
             
             <div id="loading" class="text-center py-4 text-indigo-500">Loading timetable.csv...</div>
