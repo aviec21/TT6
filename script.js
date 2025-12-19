@@ -1,20 +1,19 @@
-let allEvents = [];
+let rawData = [];
 let uniqueCourses = new Set();
-let calendar;
 
-// MAPPING: Time Slots (Columns 3-12)
-const timeSlots = {
-    3: { start: "09:00", end: "10:15" },
-    4: { start: "10:30", end: "11:45" },
-    5: { start: "12:00", end: "13:15" },
-    // 6 is Lunch
-    7: { start: "14:30", end: "15:45" },
-    8: { start: "16:00", end: "17:15" },
-    9: { start: "17:30", end: "18:45" },
-    10: { start: "19:00", end: "20:15" },
-    11: { start: "20:45", end: "22:00" },
-    12: { start: "22:15", end: "23:30" }
-};
+// CONFIG: Column Definitions
+// We map the CSV column index to a display label
+const slotsConfig = [
+    { index: 3, label: "09:00 - 10:15" },
+    { index: 4, label: "10:30 - 11:45" },
+    { index: 5, label: "12:00 - 01:15" },
+    { index: 7, label: "02:30 - 03:45" },
+    { index: 8, label: "04:00 - 05:15" },
+    { index: 9, label: "05:30 - 06:45" },
+    { index: 10, label: "07:00 - 08:15" },
+    { index: 11, label: "08:45 - 10:00" },
+    { index: 12, label: "10:15 - 11:30" }
+];
 
 document.addEventListener('DOMContentLoaded', () => {
     Papa.parse("timetable.csv", {
@@ -23,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
         skipEmptyLines: true,
         complete: function(results) {
             console.log("CSV Loaded. Rows:", results.data.length);
-            processData(results.data);
+            rawData = results.data;
+            analyzeCourses(rawData);
         },
         error: function(err) {
             alert("Error loading CSV: " + err.message);
@@ -31,90 +31,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-function processData(rows) {
-    let lastValidDate = null;
-    
-    // Start scan from index 0
+function analyzeCourses(rows) {
+    // Pass 1: Just find all unique course names for the checkboxes
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        let dateStr = row[0]; // First column
-
-        // 1. DATE HANDLING (With "Fill Down" logic)
-        let formattedDate = null;
-        
-        if (dateStr && (dateStr.includes("-") || dateStr.includes("/"))) {
-            formattedDate = normalizeDate(dateStr);
-            lastValidDate = formattedDate; 
-        } else if (lastValidDate && hasData(row)) {
-            // If date is missing but row has data, use previous date
-            formattedDate = lastValidDate;
-        }
-
-        if (!formattedDate) continue; 
-
-        const room = row[1]; 
-
-        // 2. SCAN TIME COLUMNS
-        for (const [colIndex, time] of Object.entries(timeSlots)) {
-            const cellData = row[colIndex];
-            
+        // Scan all slot columns
+        slotsConfig.forEach(slot => {
+            const cellData = row[slot.index];
             if (cellData && cellData.trim().length > 1) {
-                // Normalize spaces
-                const rawText = cellData.replace(/\s+/g, ' ').trim();
-                
-                // Logic: "BFSI A 1" -> "BFSI A"
-                let parts = rawText.split(" ");
-                if (parts.length > 1 && !isNaN(parts[parts.length - 1])) {
-                    parts.pop();
-                }
-                const courseIdentifier = parts.join(" ");
-
-                if (courseIdentifier.toLowerCase().includes("registration")) continue;
-
-                uniqueCourses.add(courseIdentifier);
-
-                allEvents.push({
-                    title: `${rawText} (${room})`,
-                    start: `${formattedDate}T${time.start}:00`,
-                    end: `${formattedDate}T${time.end}:00`,
-                    extendedProps: { courseId: courseIdentifier }
-                });
+                const courseName = extractCourseName(cellData);
+                if (courseName) uniqueCourses.add(courseName);
             }
-        }
+        });
     }
-
     renderCheckboxes();
 }
 
-function normalizeDate(str) {
-    str = str.trim();
-    // Handle 15/12/2025 or 15-12-2025
-    const parts = str.split(/[\/\-]/);
-    if (parts.length === 3) {
-        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+function extractCourseName(rawText) {
+    // Logic: "BFSI A 1" -> "BFSI A"
+    rawText = rawText.replace(/\s+/g, ' ').trim();
+    if (rawText.toLowerCase().includes("registration")) return null;
+    if (rawText.toLowerCase().includes("lunch")) return null;
+    
+    let parts = rawText.split(" ");
+    // If last part is a number (Session ID), remove it
+    if (parts.length > 1 && !isNaN(parts[parts.length - 1])) {
+        parts.pop();
     }
-    return null;
-}
-
-function hasData(row) {
-    for (let k = 3; k < 12; k++) {
-        if (row[k] && row[k].trim().length > 1) return true;
-    }
-    return false;
+    return parts.join(" ");
 }
 
 function renderCheckboxes() {
     const container = document.getElementById('checkbox-container');
     const loading = document.getElementById('loading');
     
-    if (uniqueCourses.size === 0) {
+    const sortedCourses = Array.from(uniqueCourses).sort();
+    container.innerHTML = "";
+
+    if (sortedCourses.length === 0) {
         loading.innerHTML = "No courses found. Check CSV format.";
         return;
     }
-
-    const sortedCourses = Array.from(uniqueCourses).sort();
-    container.innerHTML = "";
 
     sortedCourses.forEach(course => {
         const div = document.createElement('div');
@@ -136,7 +93,7 @@ function renderCheckboxes() {
     container.classList.remove('hidden');
 }
 
-function showCalendar() {
+function generateSchedule() {
     const checkboxes = document.querySelectorAll('#checkbox-container input[type="checkbox"]:checked');
     const selectedCourses = Array.from(checkboxes).map(cb => cb.value);
 
@@ -145,57 +102,129 @@ function showCalendar() {
         return;
     }
 
-    const filteredEvents = allEvents.filter(event => 
-        selectedCourses.includes(event.extendedProps.courseId)
-    );
-    
-    if (filteredEvents.length === 0) {
-        alert("0 classes found for this selection.");
+    // 1. Build the Data Map: Date -> Slot -> Content
+    // We use a Map to merge multiple rows (rooms) into one Date entry
+    const scheduleMap = new Map(); // Key: "YYYY-MM-DD", Value: { slotIndex: "Class Info" }
+
+    let lastValidDate = null;
+
+    for (let i = 0; i < rawData.length; i++) {
+        const row = rawData[i];
+        let dateStr = row[0];
+
+        // Date Fill-Down Logic
+        let formattedDate = null;
+        if (dateStr && (dateStr.includes("-") || dateStr.includes("/"))) {
+            formattedDate = normalizeDate(dateStr);
+            lastValidDate = formattedDate;
+        } else if (lastValidDate && hasData(row)) {
+            formattedDate = lastValidDate;
+        }
+
+        if (!formattedDate) continue;
+
+        const room = row[1] || "Unknown Room";
+
+        // Check if we already have an entry for this date
+        if (!scheduleMap.has(formattedDate)) {
+            scheduleMap.set(formattedDate, {});
+        }
+        const dateEntry = scheduleMap.get(formattedDate);
+
+        // Check columns
+        slotsConfig.forEach(slot => {
+            const cellData = row[slot.index];
+            if (cellData && cellData.trim().length > 1) {
+                const courseName = extractCourseName(cellData);
+                
+                // FILTER: Only show if it's in the selected list
+                if (selectedCourses.includes(courseName)) {
+                    // Found a match! Add to this slot
+                    const displayText = `${cellData.trim()} <br> <span class="text-xs text-gray-500">(${room})</span>`;
+                    
+                    // If multiple classes in same slot (rare conflict), append
+                    if (dateEntry[slot.index]) {
+                        dateEntry[slot.index] += `<br><hr class="my-1 border-indigo-200">` + displayText;
+                    } else {
+                        dateEntry[slot.index] = displayText;
+                    }
+                }
+            }
+        });
+    }
+
+    renderTable(scheduleMap);
+}
+
+function renderTable(scheduleMap) {
+    const tableHeader = document.getElementById('table-header');
+    const tableBody = document.getElementById('table-body');
+
+    // 1. Create Headers
+    let headerHTML = `<th class="bg-indigo-100 text-indigo-900">Date</th>`;
+    slotsConfig.forEach(slot => {
+        headerHTML += `<th class="text-xs font-bold text-gray-600">${slot.label}</th>`;
+    });
+    tableHeader.innerHTML = headerHTML;
+
+    // 2. Create Rows
+    let bodyHTML = "";
+    // Sort dates
+    const sortedDates = Array.from(scheduleMap.keys()).sort();
+
+    if (sortedDates.length === 0) {
+        alert("No classes found for the selected courses.");
         return;
     }
 
-    // Switch View
-    document.getElementById('selection-page').classList.add('hidden');
-    document.getElementById('calendar-page').classList.remove('hidden');
+    sortedDates.forEach(dateKey => {
+        const dayData = scheduleMap.get(dateKey);
+        
+        // Skip days with no classes for this student? 
+        // Or show them empty? Let's show only days with at least one class
+        if (Object.keys(dayData).length === 0) return;
 
-    // FIX: Wait 50ms for the div to become visible before rendering calendar
-    setTimeout(() => {
-        initCalendar(filteredEvents);
-    }, 50);
+        // Format Date for display (e.g., "Mon, Dec 15")
+        const dateObj = new Date(dateKey);
+        const dateDisplay = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+        let rowHTML = `<tr>`;
+        rowHTML += `<td class="font-bold bg-gray-50 whitespace-nowrap">${dateDisplay}</td>`;
+
+        slotsConfig.forEach(slot => {
+            const content = dayData[slot.index] || "";
+            const cellClass = content ? "cell-filled" : "";
+            rowHTML += `<td class="${cellClass}">${content}</td>`;
+        });
+
+        rowHTML += `</tr>`;
+        bodyHTML += rowHTML;
+    });
+
+    tableBody.innerHTML = bodyHTML;
+
+    document.getElementById('selection-page').classList.add('hidden');
+    document.getElementById('schedule-page').classList.remove('hidden');
+}
+
+function normalizeDate(str) {
+    str = str.trim();
+    const parts = str.split(/[\/\-]/);
+    if (parts.length === 3) {
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    return null;
+}
+
+function hasData(row) {
+    for (let k = 3; k < 12; k++) {
+        if (row[k] && row[k].trim().length > 1) return true;
+    }
+    return false;
 }
 
 function goBack() {
-    document.getElementById('calendar-page').classList.add('hidden');
+    document.getElementById('schedule-page').classList.add('hidden');
     document.getElementById('selection-page').classList.remove('hidden');
-}
-
-function initCalendar(events) {
-    const calendarEl = document.getElementById('calendar');
-    
-    // SMART JUMP: Find the date of the first event so we don't land on an empty month
-    // Sort events by date to find the earliest
-    events.sort((a, b) => new Date(a.start) - new Date(b.start));
-    const firstEventDate = events[0].start.split('T')[0];
-
-    if (calendar) {
-        calendar.destroy(); // Completely reset calendar
-    }
-
-    calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
-        initialDate: firstEventDate, // <--- JUMP TO FIRST CLASS
-        headerToolbar: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,listWeek'
-        },
-        events: events,
-        height: 'auto',
-        eventColor: '#4f46e5',
-        nowIndicator: true,
-        slotMinTime: "08:00:00",
-        slotMaxTime: "23:00:00"
-    });
-
-    calendar.render();
 }
